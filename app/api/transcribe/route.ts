@@ -103,8 +103,9 @@ export async function POST(request: Request) {
       existingJob = await transcribeClient.send(new GetTranscriptionJobCommand({
         TranscriptionJobName: transcriptionJobName
       }));
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
-      console.error('error:', error);
+      // console.error('error:', error);
 
       // If job not found, set existingJob to null
       existingJob = { TranscriptionJob: null };
