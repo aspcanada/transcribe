@@ -134,6 +134,19 @@ export async function POST(request: Request) {
       transcriptionText = await waitForTranscriptionCompletion(transcribeClient, transcriptionJobName);
     }
 
+    // // transcribe audio with openai whisper with a try catch
+    // // this is more expensive than aws transcribe
+    // try {
+    //   const transcription = await openai.audio.transcriptions.create({
+    //     file: file,
+    //     model: "whisper-1",
+    //   });
+    //   transcriptionText = transcription.text;
+    //   console.log('transcriptionText:', transcriptionText);
+    // } catch (error) {
+    //   console.error('OpenAI API error:', error);
+    // }
+
     // Get summary from ChatGPT
     try {
       const completion = await openai.chat.completions.create({
