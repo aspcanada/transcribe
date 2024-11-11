@@ -23,6 +23,8 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const AUTH_TOKEN = process.env.AUTH_TOKEN;
+
 async function waitForTranscriptionCompletion(transcribeClient: TranscribeClient, jobName: string): Promise<string> {
   while (true) {
     const jobStatus = await transcribeClient.send(new GetTranscriptionJobCommand({
@@ -48,6 +50,11 @@ async function waitForTranscriptionCompletion(transcribeClient: TranscribeClient
 
 export async function POST(request: Request) {
   try {
+    const token = request.headers.get('Authorization')?.split(' ')[1];
+    if (token !== AUTH_TOKEN) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
     

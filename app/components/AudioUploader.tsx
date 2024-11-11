@@ -21,6 +21,9 @@ export default function AudioUploader() {
     try {
       const response = await fetch('/api/transcribe', {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_AUTH_TOKEN}`,
+        },
         body: formData,
       });
 
