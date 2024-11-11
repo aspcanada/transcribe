@@ -5,6 +5,7 @@ import { useState } from 'react';
 export default function AudioUploader() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [authToken, setAuthToken] = useState('');
   const [result, setResult] = useState<{
     transcription: string;
     summary: string;
@@ -12,7 +13,7 @@ export default function AudioUploader() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
+    if (!file || !authToken) return;
 
     setLoading(true);
     const formData = new FormData();
@@ -22,18 +23,23 @@ export default function AudioUploader() {
       const response = await fetch('/api/transcribe', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_AUTH_TOKEN}`,
+          'Authorization': `Bearer ${authToken}`,
         },
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Upload failed');
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Invalid authentication token');
+        }
+        throw new Error('Upload failed');
+      }
 
       const data = await response.json();
       setResult(data);
     } catch (error) {
       console.error('Error:', error);
-      alert('Failed to process audio file');
+      alert(error instanceof Error ? error.message : 'Failed to process audio file');
     } finally {
       setLoading(false);
     }
@@ -42,17 +48,28 @@ export default function AudioUploader() {
   return (
     <div className="max-w-2xl mx-auto p-4">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
+        <div className="space-y-4">
           <input
-            type="file"
-            accept="audio/*"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="w-full"
+            type="password"
+            value={authToken}
+            onChange={(e) => setAuthToken(e.target.value)}
+            placeholder="Enter authentication token"
+            className="w-full p-2 border border-gray-300 rounded-lg"
+            required
           />
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
+            <input
+              type="file"
+              accept="audio/*"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              className="w-full"
+              required
+            />
+          </div>
         </div>
         <button
           type="submit"
-          disabled={!file || loading}
+          disabled={!file || !authToken || loading}
           className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 disabled:bg-gray-400"
         >
           {loading ? (
@@ -69,7 +86,9 @@ export default function AudioUploader() {
           <div>
             <h3 className="font-bold">Transcription:</h3>
             <details className="mt-2">
-              <summary className="cursor-pointer text-gray-700 hover:text-gray-900">Click to view full transcription</summary>
+              <summary className="cursor-pointer text-gray-700 hover:text-gray-900">
+                Click to view full transcription
+              </summary>
               <p className="mt-2 pl-4 text-gray-700">{result.transcription}</p>
             </details>
           </div>
