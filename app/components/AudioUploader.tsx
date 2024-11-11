@@ -52,7 +52,12 @@ export default function AudioUploader() {
           disabled={!file || loading}
           className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 disabled:bg-gray-400"
         >
-          {loading ? 'Processing...' : 'Upload and Process'}
+          {loading ? (
+            <div className="flex items-center justify-center">
+              <div className="animate-spin h-5 w-5 mr-2 border-2 border-white border-t-transparent rounded-full"></div>
+              Processing...
+            </div>
+          ) : 'Upload and Process'}
         </button>
       </form>
 
@@ -60,7 +65,10 @@ export default function AudioUploader() {
         <div className="mt-8 space-y-4">
           <div>
             <h3 className="font-bold">Transcription:</h3>
-            <p className="mt-2 text-gray-700">{result.transcription}</p>
+            <details className="mt-2">
+              <summary className="cursor-pointer text-gray-700 hover:text-gray-900">Click to view full transcription</summary>
+              <p className="mt-2 pl-4 text-gray-700">{result.transcription}</p>
+            </details>
           </div>
           <div>
             <h3 className="font-bold">Summary:</h3>
