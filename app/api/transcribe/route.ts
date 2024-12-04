@@ -57,7 +57,8 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    
+    const context = formData.get('context') as string;
+
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
@@ -114,6 +115,7 @@ export async function POST(request: Request) {
     let transcriptionText = '';
 
     if (existingJob.TranscriptionJob?.TranscriptionJobStatus === 'COMPLETED') {
+      // job exists, fetch it
       const transcriptUrl = existingJob.TranscriptionJob.Transcript?.TranscriptFileUri;
       if (!transcriptUrl) throw new Error('No transcript URL available');
       
@@ -121,6 +123,7 @@ export async function POST(request: Request) {
       const data = await response.json();
       transcriptionText = data.results.transcripts[0].transcript;
     } else if (existingJob.TranscriptionJob?.TranscriptionJobStatus === 'IN_PROGRESS') {
+      // job is in progress, just hold on...
       transcriptionText = await waitForTranscriptionCompletion(transcribeClient, transcriptionJobName);
     } else {
       // Start new transcription job
@@ -152,11 +155,20 @@ export async function POST(request: Request) {
     try {
       const completion = await openai.chat.completions.create({
         messages: [
-          { role: "system", content: "You are a helpful assistant that summarizes transcripts." },
-          { role: "user", content: `Please provide a concise summary of this transcript: ${transcriptionText}` }
+          { 
+            role: "system", 
+            content: "You are a helpful assistant that summarizes transcripts. Format your response in the following structure:\n\n" +
+              "Summary:\n[Provide a concise summary of the transcript]\n\n" +
+              "Participants:\n- [List the participants involved]\n\n" +
+              "Key Points:\n- [List 3-4 main points]\n\n" +
+              "Action Items:\n- [List any action items or next steps mentioned]"
+          },
+          { 
+            role: "user", 
+            content: `Context: ${context}\n\nPlease summarize this transcript: ${transcriptionText}` 
+          }
         ],
-        // model: "gpt-3.5-turbo",
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
       });
 
       const summary = completion.choices[0].message.content;

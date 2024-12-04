@@ -1,11 +1,13 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
+import ReactMarkdown from "react-markdown";
 
 export default function AudioUploader() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [authToken, setAuthToken] = useState('');
+  const [authToken, setAuthToken] = useState("");
+  const [context, setContext] = useState("");
   const [result, setResult] = useState<{
     transcription: string;
     summary: string;
@@ -17,29 +19,32 @@ export default function AudioUploader() {
 
     setLoading(true);
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append("file", file);
+    formData.append("context", context);
 
     try {
-      const response = await fetch('/api/transcribe', {
-        method: 'POST',
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          Authorization: `Bearer ${authToken}`,
         },
         body: formData,
       });
 
       if (!response.ok) {
         if (response.status === 401) {
-          throw new Error('Invalid authentication token');
+          throw new Error("Invalid authentication token");
         }
-        throw new Error('Upload failed');
+        throw new Error("Upload failed");
       }
 
       const data = await response.json();
       setResult(data);
     } catch (error) {
-      console.error('Error:', error);
-      alert(error instanceof Error ? error.message : 'Failed to process audio file');
+      console.error("Error:", error);
+      alert(
+        error instanceof Error ? error.message : "Failed to process audio file"
+      );
     } finally {
       setLoading(false);
     }
@@ -54,6 +59,13 @@ export default function AudioUploader() {
             value={authToken}
             onChange={(e) => setAuthToken(e.target.value)}
             placeholder="Enter authentication token"
+            className="w-full p-2 border border-gray-300 rounded-lg"
+            required
+          />
+          <textarea
+            value={context}
+            onChange={(e) => setContext(e.target.value)}
+            placeholder="Enter context of the transcription"
             className="w-full p-2 border border-gray-300 rounded-lg"
             required
           />
@@ -77,7 +89,9 @@ export default function AudioUploader() {
               <div className="animate-spin h-5 w-5 mr-2 border-2 border-white border-t-transparent rounded-full"></div>
               Processing...
             </div>
-          ) : 'Upload and Process'}
+          ) : (
+            "Upload and Process"
+          )}
         </button>
       </form>
 
@@ -93,8 +107,10 @@ export default function AudioUploader() {
             </details>
           </div>
           <div>
-            <h3 className="font-bold">Summary:</h3>
-            <p className="mt-2 text-gray-700">{result.summary}</p>
+            <h3 className="font-bold">Analysis:</h3>
+            <div className="mt-2 prose prose-blue max-w-none">
+              <ReactMarkdown>{result.summary}</ReactMarkdown>
+            </div>
           </div>
         </div>
       )}
