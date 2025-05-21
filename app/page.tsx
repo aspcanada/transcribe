@@ -25,7 +25,7 @@ export default function Home() {
               </p>
               <a
                 href="/transcribe"
-                className="inline-block bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+                className="btn btn-primary"
               >
                 Start Transcribing
               </a>
@@ -38,7 +38,7 @@ export default function Home() {
               </p>
               <a
                 href="/history"
-                className="inline-block bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+                className="btn btn-primary"
               >
                 View History
               </a>

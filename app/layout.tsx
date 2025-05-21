@@ -27,7 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en" data-theme="light">
+      <html lang="en" data-theme="corporate">
         <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
           <Header />
           <main className="container mx-auto px-4 py-8">

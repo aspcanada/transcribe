@@ -2,20 +2,25 @@
 
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { useAuth } from "@clerk/nextjs";
 
-export default function AudioUploader() {
+/**
+ * AudioUploader component for handling audio file uploads and transcription
+ * @returns {JSX.Element} The audio uploader form component
+ */
+export default function AudioUploader(): JSX.Element {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [authToken, setAuthToken] = useState("");
   const [context, setContext] = useState("");
   const [result, setResult] = useState<{
     transcription: string;
     summary: string;
   } | null>(null);
+  const { getToken } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !authToken) return;
+    if (!file) return;
 
     setLoading(true);
     const formData = new FormData();
@@ -23,17 +28,18 @@ export default function AudioUploader() {
     formData.append("context", context);
 
     try {
+      const token = await getToken();
       const response = await fetch("/api/transcribe", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Authorization: `Bearer ${token}`,
         },
         body: formData,
       });
 
       if (!response.ok) {
         if (response.status === 401) {
-          throw new Error("Invalid authentication token");
+          throw new Error("Please sign in to continue");
         }
         throw new Error("Upload failed");
       }
@@ -54,19 +60,11 @@ export default function AudioUploader() {
     <div className="max-w-2xl mx-auto p-4">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-4">
-          <input
-            type="password"
-            value={authToken}
-            onChange={(e) => setAuthToken(e.target.value)}
-            placeholder="Enter authentication token"
-            className="w-full p-2 border border-gray-300 rounded-lg"
-            required
-          />
           <textarea
             value={context}
             onChange={(e) => setContext(e.target.value)}
             placeholder="Enter context of the transcription"
-            className="w-full p-2 border border-gray-300 rounded-lg"
+            className="w-full textarea"
             required
           />
           <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
@@ -74,19 +72,20 @@ export default function AudioUploader() {
               type="file"
               accept="audio/*"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="w-full"
+              className="w-full file-input"
               required
             />
           </div>
         </div>
         <button
           type="submit"
-          disabled={!file || !authToken || loading}
-          className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 disabled:bg-gray-400"
+          disabled={!file || loading}
+          className="w-full btn btn-primary"
         >
           {loading ? (
             <div className="flex items-center justify-center">
-              <div className="animate-spin h-5 w-5 mr-2 border-2 border-white border-t-transparent rounded-full"></div>
+              <span className="loading loading-spinner loading-md mr-2"></span>
+
               Processing...
             </div>
           ) : (

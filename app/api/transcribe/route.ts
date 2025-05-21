@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { TranscribeClient, StartTranscriptionJobCommand, GetTranscriptionJobCommand } from '@aws-sdk/client-transcribe';
 import OpenAI from 'openai';
+import { auth } from '@clerk/nextjs/server';
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
@@ -22,8 +23,6 @@ const transcribeClient = new TranscribeClient({
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-
-const AUTH_TOKEN = process.env.AUTH_TOKEN;
 
 async function waitForTranscriptionCompletion(transcribeClient: TranscribeClient, jobName: string): Promise<string> {
   while (true) {
@@ -50,8 +49,8 @@ async function waitForTranscriptionCompletion(transcribeClient: TranscribeClient
 
 export async function POST(request: Request) {
   try {
-    const token = request.headers.get('Authorization')?.split(' ')[1];
-    if (token !== AUTH_TOKEN) {
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -69,7 +68,7 @@ export async function POST(request: Request) {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     const fileExtension = file.name.split('.').pop();
-    const key = `uploads/${hashHex}.${fileExtension}`;
+    const key = `uploads/${userId}/${hashHex}.${fileExtension}`;
     
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -97,7 +96,7 @@ export async function POST(request: Request) {
     }
 
     // Check if transcription job already exists
-    const transcriptionJobName = `transcription-${hashHex}`;
+    const transcriptionJobName = `transcription-${userId}-${hashHex}`;
     
     let existingJob;
     try {

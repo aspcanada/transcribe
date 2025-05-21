@@ -39,7 +39,7 @@ export const Header = (): JSX.Element => {
           </ul>
         </div>
         <Link href="/" className="btn btn-ghost text-xl">
-          Audio Transcription
+          My Tools
         </Link>
       </div>
       <div className="navbar-center hidden lg:flex">
