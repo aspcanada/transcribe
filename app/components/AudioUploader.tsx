@@ -56,6 +56,13 @@ export default function AudioUploader(): JSX.Element {
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      setFile(selectedFile);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto p-4">
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -63,18 +70,45 @@ export default function AudioUploader(): JSX.Element {
           <textarea
             value={context}
             onChange={(e) => setContext(e.target.value)}
-            placeholder="Enter context of the transcription"
+            placeholder="Enter context of the transcription (optional)"
             className="w-full textarea"
-            required
           />
           <div className="border-2 border-dashed border-gray-300 rounded-lg p-6">
-            <input
-              type="file"
-              accept="audio/*"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="w-full file-input"
-              required
-            />
+            <label className="flex flex-col items-center justify-center w-full h-32 cursor-pointer bg-gray-50 hover:bg-gray-100 rounded-lg">
+              <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                <svg
+                  className="w-8 h-8 mb-4 text-gray-500"
+                  aria-hidden="true"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 20 16"
+                >
+                  <path
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"
+                  />
+                </svg>
+                <p className="mb-2 text-sm text-gray-500">
+                  <span className="font-semibold">Click to upload</span> or drag and drop
+                </p>
+                <p className="text-xs text-gray-500">M4A, MP3, WAV, or other audio files</p>
+              </div>
+              <input
+                type="file"
+                accept=".m4a,.mp3,.wav,.aac,.ogg,.webm,audio/*"
+                onChange={handleFileChange}
+                className="hidden"
+                required
+              />
+            </label>
+            {file && (
+              <div className="mt-4 text-sm text-gray-500">
+                Selected file: {file.name}
+              </div>
+            )}
           </div>
         </div>
         <button
@@ -85,7 +119,6 @@ export default function AudioUploader(): JSX.Element {
           {loading ? (
             <div className="flex items-center justify-center">
               <span className="loading loading-spinner loading-md mr-2"></span>
-
               Processing...
             </div>
           ) : (
