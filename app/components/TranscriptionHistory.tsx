@@ -17,6 +17,8 @@ export default function TranscriptionHistory() {
   const [history, setHistory] = useState<TranscriptionHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const { getToken } = useAuth();
 
   const fetchHistory = async () => {
@@ -43,10 +45,6 @@ export default function TranscriptionHistory() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this transcription?")) {
-      return;
-    }
-
     try {
       const token = await getToken();
       const response = await fetch(`/api/transcribe?key=${encodeURIComponent(id)}`, {
@@ -62,9 +60,16 @@ export default function TranscriptionHistory() {
 
       // Refresh the history
       await fetchHistory();
+      setDeleteModalOpen(false);
+      setItemToDelete(null);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to delete transcription");
     }
+  };
+
+  const openDeleteModal = (id: string) => {
+    setItemToDelete(id);
+    setDeleteModalOpen(true);
   };
 
   useEffect(() => {
@@ -124,7 +129,7 @@ export default function TranscriptionHistory() {
                   </p>
                 </div>
                 <button
-                  onClick={() => handleDelete(item.id)}
+                  onClick={() => openDeleteModal(item.id)}
                   className="btn btn-ghost btn-sm text-error"
                   title="Delete transcription"
                 >
@@ -146,27 +151,63 @@ export default function TranscriptionHistory() {
               </div>
               <div className="mt-2">
                 <h3 className="font-semibold">Context:</h3>
-                <p className="text-gray-600">{item.context}</p>
+                <p className="text-gray-600">{item.context || "No context provided"}</p>
               </div>
               <div className="mt-4">
-                <h3 className="font-semibold">Transcription:</h3>
-                <details className="mt-2">
-                  <summary className="cursor-pointer text-gray-700 hover:text-gray-900">
-                    Click to view full transcription
-                  </summary>
-                  <p className="mt-2 pl-4 text-gray-700">{item.transcription}</p>
-                </details>
+                <div className="collapse collapse-arrow bg-base-100 border border-base-300">
+                  <input type="checkbox" name={item.id}/> 
+                  <div className="collapse-title font-semibold">
+                    Transcription
+                  </div>
+                  <div className="collapse-content">
+                    <p className="text-gray-700">{item.transcription}</p>
+                  </div>
+                </div>
               </div>
               <div className="mt-4">
-                <h3 className="font-semibold">Summary:</h3>
-                <div className="prose prose-blue max-w-none">
-                  <ReactMarkdown>{item.summary}</ReactMarkdown>
+                <div className="collapse collapse-arrow bg-base-100 border border-base-300">
+                  <input type="checkbox" name={item.id}/> 
+                  <div className="collapse-title font-semibold">
+                    Click to view summary
+                  </div>
+                  <div className="collapse-content">
+                    <div className="prose prose-blue max-w-none">
+                      <ReactMarkdown>{item.summary}</ReactMarkdown>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         ))
       )}
+      {/* Delete Confirmation Modal */}
+      <dialog id="delete_modal" className={`modal ${deleteModalOpen ? "modal-open" : ""}`}>
+        <div className="modal-box">
+          <h3 className="font-bold text-lg">Delete Transcription</h3>
+          <p className="py-4">Are you sure you want to delete this transcription? This action cannot be undone.</p>
+          <div className="modal-action">
+            <button 
+              className="btn" 
+              onClick={() => {
+                setDeleteModalOpen(false);
+                setItemToDelete(null);
+              }}
+            >
+              Cancel
+            </button>
+            <button 
+              className="btn btn-error" 
+              onClick={() => itemToDelete && handleDelete(itemToDelete)}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+        <form method="dialog" className="modal-backdrop">
+          <button onClick={() => setDeleteModalOpen(false)}>close</button>
+        </form>
+      </dialog>
     </div>
   );
 } 
