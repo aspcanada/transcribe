@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     const fileExtension = file.name.split('.').pop();
-    const key = `uploads/${userId}/${hashHex}.${fileExtension}`;
+    const key = `transcriptions/${userId}/${hashHex}.${fileExtension}`;
     
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -256,7 +256,7 @@ export async function GET() {
     // List all objects in the user's directory
     const command = new ListObjectsV2Command({
       Bucket: process.env.S3_BUCKET_NAME!,
-      Prefix: `uploads/${userId}/`,
+      Prefix: `transcriptions/${userId}/`,
     });
 
     const response = await s3Client.send(command);
@@ -341,7 +341,7 @@ export async function DELETE(request: Request) {
     }
 
     // Verify the file belongs to the user
-    if (!key.startsWith(`uploads/${userId}/`)) {
+    if (!key.startsWith(`transcriptions/${userId}/`)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
