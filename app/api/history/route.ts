@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { S3Client, ListObjectsV2Command, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { TranscribeClient, GetTranscriptionJobCommand } from "@aws-sdk/client-transcribe";
+import { TranscribeClient, GetTranscriptionJobCommand, DeleteTranscriptionJobCommand } from "@aws-sdk/client-transcribe";
 import { auth } from "@clerk/nextjs/server";
 
 const s3Client = new S3Client({
@@ -69,12 +69,16 @@ export async function GET() {
           console.error("Error fetching transcription:", error);
         }
         
+        const summary = headResponse.Metadata?.summary 
+          ? decodeURIComponent(headResponse.Metadata.summary)
+          : "Summary unavailable";
+        
         return {
           id: file.Key,
           fileName: headResponse.Metadata?.filename || "Unknown file",
           context: headResponse.Metadata?.context || "",
           transcription,
-          summary: headResponse.Metadata?.summary || "",
+          summary,
           createdAt: file.LastModified?.toISOString() || new Date().toISOString(),
         };
       })
@@ -112,6 +116,20 @@ export async function DELETE(request: Request) {
     // Verify the file belongs to the user
     if (!key.startsWith(`uploads/${userId}/`)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Extract hash from the key for transcription job lookup
+    const hashHex = key.split("/").pop()?.split(".")[0] || "";
+    const transcriptionJobName = `transcription-${userId}-${hashHex}`;
+
+    // Delete the transcription job
+    try {
+      await transcribeClient.send(new DeleteTranscriptionJobCommand({
+        TranscriptionJobName: transcriptionJobName
+      }));
+    } catch (error) {
+      console.error("Error deleting transcription job:", error);
+      // Continue with file deletion even if transcription job deletion fails
     }
 
     // Delete the original file

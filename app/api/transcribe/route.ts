@@ -204,27 +204,36 @@ export async function POST(request: Request) {
 
       const summary = completion.choices[0].message.content;
     
-      // Update the file metadata with just the summary
-      await s3Client.send(new PutObjectCommand({
-        Bucket: process.env.S3_BUCKET_NAME!,
-        Key: key,
-        Body: buffer,
-        ContentType: file.type,
-        Metadata: {
-          fileName: file.name,
-          context: context || "",
-          summary: summary || "Summary unavailable",
-        },
-      }));
+      try {
+        // Update the file metadata with just the summary
+        await s3Client.send(new PutObjectCommand({
+          Bucket: process.env.S3_BUCKET_NAME!,
+          Key: key,
+          Body: buffer,
+          ContentType: file.type,
+          Metadata: {
+            fileName: file.name,
+            context: context || "",
+            summary: encodeURIComponent(summary || "Summary unavailable"),
+          },
+        }));
 
-      return NextResponse.json({ 
-        transcription: transcriptionText,
-        summary: summary
-      });
+        return NextResponse.json({ 
+          transcription: transcriptionText,
+          summary: summary
+        });
+      } catch (s3Error) {
+        console.error('S3 update error:', s3Error);
+        // Still return the transcription and summary even if S3 update fails
+        return NextResponse.json({ 
+          transcription: transcriptionText,
+          summary: summary
+        });
+      }
     
-    } catch (error) {
+    } catch (openaiError) {
       // Handle OpenAI API errors gracefully
-      console.error('OpenAI API error:', error);
+      console.error('OpenAI API error:', openaiError);
       return NextResponse.json({ 
         transcription: transcriptionText,
         summary: "Summary unavailable - API limit reached"

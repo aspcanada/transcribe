@@ -10,11 +10,15 @@ interface TranscriptionResponse {
   isExisting?: boolean;
 }
 
+interface AudioUploaderProps {
+  onComplete?: () => void;
+}
+
 /**
  * AudioUploader component for handling audio file uploads and transcription
  * @returns {JSX.Element} The audio uploader form component
  */
-export default function AudioUploader(): JSX.Element {
+export default function AudioUploader({ onComplete }: AudioUploaderProps): JSX.Element {
   const [file, setFile] = useState<File | null>(null);
   const [context, setContext] = useState("");
   const [transcription, setTranscription] = useState("");
@@ -57,6 +61,15 @@ export default function AudioUploader(): JSX.Element {
       setTranscription(data.transcription);
       setSummary(data.summary);
       setIsExisting(data.isExisting || false);
+
+      // Call onComplete callback if provided
+      if (onComplete) {
+        onComplete();
+      }
+
+      // Reset form
+      setFile(null);
+      setContext("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
