@@ -4,18 +4,24 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useAuth } from "@clerk/nextjs";
 
+interface TranscriptionResponse {
+  transcription: string;
+  summary: string;
+  isExisting?: boolean;
+}
+
 /**
  * AudioUploader component for handling audio file uploads and transcription
  * @returns {JSX.Element} The audio uploader form component
  */
 export default function AudioUploader(): JSX.Element {
   const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
   const [context, setContext] = useState("");
-  const [result, setResult] = useState<{
-    transcription: string;
-    summary: string;
-  } | null>(null);
+  const [transcription, setTranscription] = useState("");
+  const [summary, setSummary] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isExisting, setIsExisting] = useState(false);
   const { getToken } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -23,6 +29,9 @@ export default function AudioUploader(): JSX.Element {
     if (!file) return;
 
     setLoading(true);
+    setError(null);
+    setIsExisting(false);
+
     const formData = new FormData();
     formData.append("file", file);
     formData.append("context", context);
@@ -41,16 +50,15 @@ export default function AudioUploader(): JSX.Element {
         if (response.status === 401) {
           throw new Error("Please sign in to continue");
         }
-        throw new Error("Upload failed");
+        throw new Error("Failed to transcribe audio");
       }
 
-      const data = await response.json();
-      setResult(data);
-    } catch (error) {
-      console.error("Error:", error);
-      alert(
-        error instanceof Error ? error.message : "Failed to process audio file"
-      );
+      const data: TranscriptionResponse = await response.json();
+      setTranscription(data.transcription);
+      setSummary(data.summary);
+      setIsExisting(data.isExisting || false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setLoading(false);
     }
@@ -64,7 +72,7 @@ export default function AudioUploader(): JSX.Element {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="w-full max-w-2xl mx-auto p-4">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-4">
           <textarea
@@ -125,27 +133,54 @@ export default function AudioUploader(): JSX.Element {
             "Upload and Process"
           )}
         </button>
-      </form>
 
-      {result && (
-        <div className="mt-8 space-y-4">
-          <div>
-            <h3 className="font-bold">Transcription:</h3>
-            <details className="mt-2">
-              <summary className="cursor-pointer text-gray-700 hover:text-gray-900">
-                Click to view full transcription
-              </summary>
-              <p className="mt-2 pl-4 text-gray-700">{result.transcription}</p>
-            </details>
+        {error && (
+          <div className="alert alert-error">
+            <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>{error}</span>
           </div>
-          <div>
-            <h3 className="font-bold">Analysis:</h3>
-            <div className="mt-2 prose prose-blue max-w-none">
-              <ReactMarkdown>{result.summary}</ReactMarkdown>
+        )}
+
+        {isExisting && (
+          <div className="alert alert-info">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-current shrink-0 w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>This file has already been transcribed. Showing previous results.</span>
+          </div>
+        )}
+
+        {transcription && (
+          <div className="space-y-4">
+            <div className="card bg-base-100 shadow-xl">
+              <div className="card-body">
+                <h2 className="card-title">Transcription</h2>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-gray-700 hover:text-gray-900">
+                    Click to view full transcription
+                  </summary>
+                  <div className="mt-2 pl-4 text-gray-700">
+                    <ReactMarkdown>{transcription}</ReactMarkdown>
+                  </div>
+                </details>
+              </div>
             </div>
+
+            {summary && (
+              <div className="card bg-base-100 shadow-xl">
+                <div className="card-body">
+                  <h2 className="card-title">Analysis</h2>
+                  <div className="prose max-w-none">
+                    <ReactMarkdown>{summary}</ReactMarkdown>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </form>
     </div>
   );
 }

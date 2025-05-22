@@ -74,21 +74,53 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(arrayBuffer);
 
     try {
-      await s3Client.send(new HeadObjectCommand({
+      // Check if file exists and has metadata
+      const headResponse = await s3Client.send(new HeadObjectCommand({
         Bucket: process.env.S3_BUCKET_NAME!,
         Key: key
       }));
-      // File exists, no need to upload
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) {
-      if (error && typeof error === 'object' && 'name' in error && error.name === 'NotFound') {
+      // If file exists and has summary metadata, check if transcription job exists
+      if (headResponse.Metadata?.summary) {
+        const transcriptionJobName = `transcription-${userId}-${hashHex}`;
+        try {
+          const existingJob = await transcribeClient.send(new GetTranscriptionJobCommand({
+            TranscriptionJobName: transcriptionJobName
+          }));
+
+          if (existingJob.TranscriptionJob?.TranscriptionJobStatus === 'COMPLETED') {
+            const transcriptUrl = existingJob.TranscriptionJob.Transcript?.TranscriptFileUri;
+            if (!transcriptUrl) throw new Error('No transcript URL available');
+            
+            const response = await fetch(transcriptUrl);
+            const data = await response.json();
+            const transcriptionText = data.results.transcripts[0].transcript;
+
+            return NextResponse.json({
+              transcription: transcriptionText,
+              summary: headResponse.Metadata.summary,
+              isExisting: true
+            });
+          }
+        } catch (error) {
+          // If job not found or other error, continue with new transcription
+          console.error('Error checking existing job:', error);
+        }
+      }
+
+      // File exists but no transcription, continue with upload
+    } catch (error: unknown) {
+      if (error && typeof error === "object" && "name" in error && (error as { name: string }).name === "NotFound") {
         // File doesn't exist, upload it
         await s3Client.send(new PutObjectCommand({
           Bucket: process.env.S3_BUCKET_NAME!,
           Key: key,
           Body: buffer,
           ContentType: file.type,
+          Metadata: {
+            fileName: file.name,
+            context: context || "",
+          },
         }));
       } else {
         throw error; // Re-throw other errors
@@ -172,6 +204,19 @@ export async function POST(request: Request) {
 
       const summary = completion.choices[0].message.content;
     
+      // Update the file metadata with just the summary
+      await s3Client.send(new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME!,
+        Key: key,
+        Body: buffer,
+        ContentType: file.type,
+        Metadata: {
+          fileName: file.name,
+          context: context || "",
+          summary: summary || "Summary unavailable",
+        },
+      }));
+
       return NextResponse.json({ 
         transcription: transcriptionText,
         summary: summary
@@ -185,8 +230,6 @@ export async function POST(request: Request) {
         summary: "Summary unavailable - API limit reached"
       });
     }
-
-    
 
   } catch (error) {
     console.error('Error:', error);
