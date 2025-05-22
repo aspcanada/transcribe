@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 
 interface TranscriptionHistory {
   id: string;
-  fileName: string;
+  filename: string;
   context: string;
   transcription: string;
   summary: string;
@@ -23,7 +23,7 @@ export default function TranscriptionHistory() {
     try {
       setLoading(true);
       const token = await getToken();
-      const response = await fetch("/api/history", {
+      const response = await fetch("/api/transcribe", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -49,7 +49,7 @@ export default function TranscriptionHistory() {
 
     try {
       const token = await getToken();
-      const response = await fetch(`/api/history?key=${encodeURIComponent(id)}`, {
+      const response = await fetch(`/api/transcribe?key=${encodeURIComponent(id)}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -118,7 +118,7 @@ export default function TranscriptionHistory() {
             <div className="card-body">
               <div className="flex justify-between items-start">
                 <div>
-                  <h2 className="card-title">{item.fileName}</h2>
+                  <h2 className="card-title">{item.filename}</h2>
                   <p className="text-sm text-gray-500">
                     {new Date(item.createdAt).toLocaleString()}
                   </p>
@@ -144,10 +144,10 @@ export default function TranscriptionHistory() {
                   </svg>
                 </button>
               </div>
-                <div className="mt-2">
-                  <h3 className="font-semibold">Context:</h3>
-                  <p className="text-gray-600">{item.context}</p>
-                </div>
+              <div className="mt-2">
+                <h3 className="font-semibold">Context:</h3>
+                <p className="text-gray-600">{item.context}</p>
+              </div>
               <div className="mt-4">
                 <h3 className="font-semibold">Transcription:</h3>
                 <details className="mt-2">
