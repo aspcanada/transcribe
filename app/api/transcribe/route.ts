@@ -63,23 +63,23 @@ export async function POST(request: Request) {
   try {
     const { userId } = await auth();
     if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const context = formData.get('context') as string;
+    const file = formData.get("file") as File;
+    const context = formData.get("context") as string;
 
     if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
     // Create a unique key based on file name and content hash
     const fileBuffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    const fileExtension = file.name.split('.').pop();
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+    const fileExtension = file.name.split(".").pop();
     const key = `transcriptions/${userId}/${hashHex}.${fileExtension}`;
     
     const arrayBuffer = await file.arrayBuffer();
@@ -104,19 +104,31 @@ export async function POST(request: Request) {
       }
     } catch (error) {
       console.error("Error checking existing transcription:", error);
+      return NextResponse.json({ 
+        error: "Failed to check for existing transcription",
+        details: error instanceof Error ? error.message : "Unknown error"
+      }, { status: 500 });
     }
 
     // Upload file to S3
-    await s3Client.send(new PutObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME!,
-      Key: key,
-      Body: buffer,
-      ContentType: file.type,
-      Metadata: {
-        filename: file.name,
-        context: context || "",
-      },
-    }));
+    try {
+      await s3Client.send(new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME!,
+        Key: key,
+        Body: buffer,
+        ContentType: file.type,
+        Metadata: {
+          filename: file.name,
+          context: context || "",
+        },
+      }));
+    } catch (error) {
+      console.error("Error uploading to S3:", error);
+      return NextResponse.json({ 
+        error: "Failed to upload audio file",
+        details: error instanceof Error ? error.message : "Unknown error"
+      }, { status: 500 });
+    }
 
     // Start transcription job
     const transcriptionJobName = `transcription-${userId}-${hashHex}`;
@@ -144,19 +156,38 @@ export async function POST(request: Request) {
       } else if (existingJob?.TranscriptionJob?.TranscriptionJobStatus === "IN_PROGRESS") {
         transcriptionText = await waitForTranscriptionCompletion(transcribeClient, transcriptionJobName);
       } else {
-        await transcribeClient.send(new StartTranscriptionJobCommand({
-          TranscriptionJobName: transcriptionJobName,
-          Media: {
-            MediaFileUri: `s3://${process.env.S3_BUCKET_NAME}/${key}`,
-          },
-          LanguageCode: "en-US",
-        }));
+        try {
+          await transcribeClient.send(new StartTranscriptionJobCommand({
+            TranscriptionJobName: transcriptionJobName,
+            Media: {
+              MediaFileUri: `s3://${process.env.S3_BUCKET_NAME}/${key}`,
+            },
+            LanguageCode: "en-US",
+          }));
+        } catch (error) {
+          console.error("Error starting transcription job:", error);
+          return NextResponse.json({ 
+            error: "Failed to start transcription job",
+            details: error instanceof Error ? error.message : "Unknown error"
+          }, { status: 500 });
+        }
 
-        transcriptionText = await waitForTranscriptionCompletion(transcribeClient, transcriptionJobName);
+        try {
+          transcriptionText = await waitForTranscriptionCompletion(transcribeClient, transcriptionJobName);
+        } catch (error) {
+          console.error("Error waiting for transcription completion:", error);
+          return NextResponse.json({ 
+            error: "Failed to complete transcription",
+            details: error instanceof Error ? error.message : "Unknown error"
+          }, { status: 500 });
+        }
       }
     } catch (error) {
       console.error("Error with transcription job:", error);
-      throw error;
+      return NextResponse.json({ 
+        error: "Failed to process transcription job",
+        details: error instanceof Error ? error.message : "Unknown error"
+      }, { status: 500 });
     }
 
     // Get summary from ChatGPT
@@ -183,23 +214,34 @@ export async function POST(request: Request) {
       summary = completion.choices[0].message.content || "";
     } catch (error) {
       console.error("OpenAI API error:", error);
-      summary = "Summary unavailable - API limit reached";
+      return NextResponse.json({ 
+        error: "Failed to generate summary",
+        details: error instanceof Error ? error.message : "Unknown error"
+      }, { status: 500 });
     }
 
     // Store in DynamoDB
-    await docClient.send(new PutCommand({
-      TableName: process.env.DYNAMODB_TABLE_NAME!,
-      Item: {
-        userId,
-        fileHash: hashHex,
-        filename: file.name,
-        context: context || "",
-        transcription: transcriptionText,
-        summary,
-        createdAt: new Date().toISOString(),
-        s3Key: key,
-      },
-    }));
+    try {
+      await docClient.send(new PutCommand({
+        TableName: process.env.DYNAMODB_TABLE_NAME!,
+        Item: {
+          userId,
+          fileHash: hashHex,
+          filename: file.name,
+          context: context || "",
+          transcription: transcriptionText,
+          summary,
+          createdAt: new Date().toISOString(),
+          s3Key: key,
+        },
+      }));
+    } catch (error) {
+      console.error("Error storing in DynamoDB:", error);
+      return NextResponse.json({ 
+        error: "Failed to save transcription",
+        details: error instanceof Error ? error.message : "Unknown error"
+      }, { status: 500 });
+    }
 
     return NextResponse.json({ 
       transcription: transcriptionText,
@@ -207,8 +249,11 @@ export async function POST(request: Request) {
     });
 
   } catch (error) {
-    console.error("Error:", error);
-    return NextResponse.json({ error: "Processing failed" }, { status: 500 });
+    console.error("Unexpected error:", error);
+    return NextResponse.json({ 
+      error: "An unexpected error occurred",
+      details: error instanceof Error ? error.message : "Unknown error"
+    }, { status: 500 });
   }
 }
 

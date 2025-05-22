@@ -54,7 +54,8 @@ export default function AudioUploader({ onComplete }: AudioUploaderProps): JSX.E
         if (response.status === 401) {
           throw new Error("Please sign in to continue");
         }
-        throw new Error("Failed to transcribe audio", { cause: response.statusText });
+        const errorData = await response.json();
+        throw new Error(errorData.details || errorData.error || "Failed to transcribe audio");
       }
 
       const data: TranscriptionResponse = await response.json();
