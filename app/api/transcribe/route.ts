@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { S3Client, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { TranscribeClient, StartTranscriptionJobCommand, GetTranscriptionJobCommand, DeleteTranscriptionJobCommand } from '@aws-sdk/client-transcribe';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import OpenAI from 'openai';
 import { auth } from '@clerk/nextjs/server';
 
@@ -19,6 +21,16 @@ const transcribeClient = new TranscribeClient({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
 });
+
+const dynamoClient = new DynamoDBClient({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
+const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -73,116 +85,75 @@ export async function POST(request: Request) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // Check if transcription exists in DynamoDB
     try {
-      // Check if file exists and has metadata
-      const headResponse = await s3Client.send(new HeadObjectCommand({
-        Bucket: process.env.S3_BUCKET_NAME!,
-        Key: key
-      }));
-
-      // If file exists and has summary metadata, check if transcription job exists
-      if (headResponse.Metadata?.summary) {
-        const transcriptionJobName = `transcription-${userId}-${hashHex}`;
-        try {
-          const existingJob = await transcribeClient.send(new GetTranscriptionJobCommand({
-            TranscriptionJobName: transcriptionJobName
-          }));
-
-          if (existingJob.TranscriptionJob?.TranscriptionJobStatus === 'COMPLETED') {
-            const transcriptUrl = existingJob.TranscriptionJob.Transcript?.TranscriptFileUri;
-            if (!transcriptUrl) throw new Error('No transcript URL available');
-            
-            const response = await fetch(transcriptUrl);
-            const data = await response.json();
-            const transcriptionText = data.results.transcripts[0].transcript;
-
-            return NextResponse.json({
-              transcription: transcriptionText,
-              summary: headResponse.Metadata.summary,
-              isExisting: true
-            });
-          }
-        } catch (error) {
-          // If job not found or other error, continue with new transcription
-          console.error('Error checking existing job:', error);
-        }
-      }
-
-      // File exists but no transcription, continue with upload
-    } catch (error: unknown) {
-      if (error && typeof error === "object" && "name" in error && (error as { name: string }).name === "NotFound") {
-        // File doesn't exist, upload it
-        await s3Client.send(new PutObjectCommand({
-          Bucket: process.env.S3_BUCKET_NAME!,
-          Key: key,
-          Body: buffer,
-          ContentType: file.type,
-          Metadata: {
-            filename: file.name,
-            context: context || "",
-          },
-        }));
-      } else {
-        throw error; // Re-throw other errors
-      }
-    }
-
-    // Check if transcription job already exists
-    const transcriptionJobName = `transcription-${userId}-${hashHex}`;
-    
-    let existingJob;
-    try {
-      existingJob = await transcribeClient.send(new GetTranscriptionJobCommand({
-        TranscriptionJobName: transcriptionJobName
-      }));
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    } catch (error) {
-      // console.error('error:', error);
-
-      // If job not found, set existingJob to null
-      existingJob = { TranscriptionJob: null };
-    }
-
-    let transcriptionText = '';
-
-    if (existingJob.TranscriptionJob?.TranscriptionJobStatus === 'COMPLETED') {
-      // job exists, fetch it
-      const transcriptUrl = existingJob.TranscriptionJob.Transcript?.TranscriptFileUri;
-      if (!transcriptUrl) throw new Error('No transcript URL available');
-      
-      const response = await fetch(transcriptUrl);
-      const data = await response.json();
-      transcriptionText = data.results.transcripts[0].transcript;
-    } else if (existingJob.TranscriptionJob?.TranscriptionJobStatus === 'IN_PROGRESS') {
-      // job is in progress, just hold on...
-      transcriptionText = await waitForTranscriptionCompletion(transcribeClient, transcriptionJobName);
-    } else {
-      // Start new transcription job
-      await transcribeClient.send(new StartTranscriptionJobCommand({
-        TranscriptionJobName: transcriptionJobName,
-        Media: {
-          MediaFileUri: `s3://${process.env.S3_BUCKET_NAME}/${key}`
+      const existingTranscription = await docClient.send(new GetCommand({
+        TableName: process.env.DYNAMODB_TABLE_NAME!,
+        Key: {
+          userId,
+          fileHash: hashHex,
         },
-        LanguageCode: 'en-US'
       }));
 
-      transcriptionText = await waitForTranscriptionCompletion(transcribeClient, transcriptionJobName);
+      if (existingTranscription.Item) {
+        return NextResponse.json({
+          transcription: existingTranscription.Item.transcription,
+          summary: existingTranscription.Item.summary,
+          isExisting: true,
+        });
+      }
+    } catch (error) {
+      console.error("Error checking existing transcription:", error);
     }
 
-    // // transcribe audio with openai whisper with a try catch
-    // // this is more expensive than aws transcribe
-    // try {
-    //   const transcription = await openai.audio.transcriptions.create({
-    //     file: file,
-    //     model: "whisper-1",
-    //   });
-    //   transcriptionText = transcription.text;
-    //   console.log('transcriptionText:', transcriptionText);
-    // } catch (error) {
-    //   console.error('OpenAI API error:', error);
-    // }
+    // Upload file to S3
+    await s3Client.send(new PutObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME!,
+      Key: key,
+      Body: buffer,
+      ContentType: file.type,
+      Metadata: {
+        filename: file.name,
+        context: context || "",
+      },
+    }));
+
+    // Start transcription job
+    const transcriptionJobName = `transcription-${userId}-${hashHex}`;
+    let transcriptionText = "";
+
+    try {
+      const existingJob = await transcribeClient.send(new GetTranscriptionJobCommand({
+        TranscriptionJobName: transcriptionJobName,
+      }));
+
+      if (existingJob.TranscriptionJob?.TranscriptionJobStatus === "COMPLETED") {
+        const transcriptUrl = existingJob.TranscriptionJob.Transcript?.TranscriptFileUri;
+        if (!transcriptUrl) throw new Error("No transcript URL available");
+        
+        const response = await fetch(transcriptUrl);
+        const data = await response.json();
+        transcriptionText = data.results.transcripts[0].transcript;
+      } else if (existingJob.TranscriptionJob?.TranscriptionJobStatus === "IN_PROGRESS") {
+        transcriptionText = await waitForTranscriptionCompletion(transcribeClient, transcriptionJobName);
+      } else {
+        await transcribeClient.send(new StartTranscriptionJobCommand({
+          TranscriptionJobName: transcriptionJobName,
+          Media: {
+            MediaFileUri: `s3://${process.env.S3_BUCKET_NAME}/${key}`,
+          },
+          LanguageCode: "en-US",
+        }));
+
+        transcriptionText = await waitForTranscriptionCompletion(transcribeClient, transcriptionJobName);
+      }
+    } catch (error) {
+      console.error("Error with transcription job:", error);
+      throw error;
+    }
 
     // Get summary from ChatGPT
+    let summary = "";
     try {
       const completion = await openai.chat.completions.create({
         messages: [
@@ -199,50 +170,38 @@ export async function POST(request: Request) {
             content: `Context: ${context}\n\nPlease summarize this transcript: ${transcriptionText}` 
           }
         ],
-        model: "gpt-4o",
+        model: "gpt-4",
       });
 
-      const summary = completion.choices[0].message.content;
-    
-      try {
-        // Update the file metadata with just the summary
-        await s3Client.send(new PutObjectCommand({
-          Bucket: process.env.S3_BUCKET_NAME!,
-          Key: key,
-          Body: buffer,
-          ContentType: file.type,
-          Metadata: {
-            filename: file.name,
-            context: context || "",
-            summary: encodeURIComponent(summary || "Summary unavailable"),
-          },
-        }));
-
-        return NextResponse.json({ 
-          transcription: transcriptionText,
-          summary: summary
-        });
-      } catch (s3Error) {
-        console.error('S3 update error:', s3Error);
-        // Still return the transcription and summary even if S3 update fails
-        return NextResponse.json({ 
-          transcription: transcriptionText,
-          summary: summary
-        });
-      }
-    
-    } catch (openaiError) {
-      // Handle OpenAI API errors gracefully
-      console.error('OpenAI API error:', openaiError);
-      return NextResponse.json({ 
-        transcription: transcriptionText,
-        summary: "Summary unavailable - API limit reached"
-      });
+      summary = completion.choices[0].message.content || "";
+    } catch (error) {
+      console.error("OpenAI API error:", error);
+      summary = "Summary unavailable - API limit reached";
     }
 
+    // Store in DynamoDB
+    await docClient.send(new PutCommand({
+      TableName: process.env.DYNAMODB_TABLE_NAME!,
+      Item: {
+        userId,
+        fileHash: hashHex,
+        filename: file.name,
+        context: context || "",
+        transcription: transcriptionText,
+        summary,
+        createdAt: new Date().toISOString(),
+        s3Key: key,
+      },
+    }));
+
+    return NextResponse.json({ 
+      transcription: transcriptionText,
+      summary,
+    });
+
   } catch (error) {
-    console.error('Error:', error);
-    return NextResponse.json({ error: 'Processing failed' }, { status: 500 });
+    console.error("Error:", error);
+    return NextResponse.json({ error: "Processing failed" }, { status: 500 });
   }
 }
 
@@ -253,70 +212,18 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // List all objects in the user's directory
-    const command = new ListObjectsV2Command({
-      Bucket: process.env.S3_BUCKET_NAME!,
-      Prefix: `transcriptions/${userId}/`,
-    });
+    // Query DynamoDB for user's transcriptions
+    const result = await docClient.send(new QueryCommand({
+      TableName: process.env.DYNAMODB_TABLE_NAME!,
+      IndexName: "CreatedAtIndex",
+      KeyConditionExpression: "userId = :userId",
+      ExpressionAttributeValues: {
+        ":userId": userId,
+      },
+      ScanIndexForward: false, // Sort in descending order (newest first)
+    }));
 
-    const response = await s3Client.send(command);
-    const files = response.Contents || [];
-
-    // Fetch metadata for each file
-    const history = await Promise.all(
-      files.map(async (file) => {
-        if (!file.Key) return null;
-
-        // Get metadata using HeadObjectCommand
-        const headResponse = await s3Client.send(new HeadObjectCommand({
-          Bucket: process.env.S3_BUCKET_NAME!,
-          Key: file.Key,
-        }));
-
-        // Extract hash from the key for transcription job lookup
-        const hashHex = file.Key.split("/").pop()?.split(".")[0] || "";
-        
-        let transcription = "";
-        const transcriptionJobName = `transcription-${userId}-${hashHex}`;
-        
-        try {
-          const jobResponse = await transcribeClient.send(new GetTranscriptionJobCommand({
-            TranscriptionJobName: transcriptionJobName
-          }));
-
-          if (jobResponse.TranscriptionJob?.TranscriptionJobStatus === "COMPLETED") {
-            const transcriptUrl = jobResponse.TranscriptionJob.Transcript?.TranscriptFileUri;
-            if (transcriptUrl) {
-              const transcriptResponse = await fetch(transcriptUrl);
-              const transcriptData = await transcriptResponse.json();
-              transcription = transcriptData.results.transcripts[0].transcript;
-            }
-          }
-        } catch (error) {
-          console.error("Error fetching transcription:", error);
-        }
-        
-        const summary = headResponse.Metadata?.summary 
-          ? decodeURIComponent(headResponse.Metadata.summary)
-          : "Summary unavailable";
-        
-        return {
-          id: file.Key,
-          filename: headResponse.Metadata?.filename || "Unknown file",
-          context: headResponse.Metadata?.context || "",
-          transcription,
-          summary,
-          createdAt: file.LastModified?.toISOString() || new Date().toISOString(),
-        };
-      })
-    );
-
-    // Filter out null values and sort by date (newest first)
-    const validHistory = history
-      .filter((item): item is NonNullable<typeof item> => item !== null)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    return NextResponse.json(validHistory);
+    return NextResponse.json(result.Items || []);
   } catch (error) {
     console.error("Error fetching history:", error);
     return NextResponse.json(
@@ -352,17 +259,25 @@ export async function DELETE(request: Request) {
     // Delete the transcription job
     try {
       await transcribeClient.send(new DeleteTranscriptionJobCommand({
-        TranscriptionJobName: transcriptionJobName
+        TranscriptionJobName: transcriptionJobName,
       }));
     } catch (error) {
       console.error("Error deleting transcription job:", error);
-      // Continue with file deletion even if transcription job deletion fails
     }
 
-    // Delete the original file
+    // Delete from S3
     await s3Client.send(new DeleteObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME!,
       Key: key,
+    }));
+
+    // Delete from DynamoDB
+    await docClient.send(new DeleteCommand({
+      TableName: process.env.DYNAMODB_TABLE_NAME!,
+      Key: {
+        userId,
+        fileHash: hashHex,
+      },
     }));
 
     return NextResponse.json({ success: true });
