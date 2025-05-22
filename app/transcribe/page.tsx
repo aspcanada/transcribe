@@ -161,7 +161,7 @@ export default function TranscribePage() {
                     </div>
                     <div className="mt-4">
                       <div className="collapse collapse-arrow bg-base-100 border border-base-300">
-                        <input type="checkbox" name={item.id}/> 
+                        <input type="checkbox" name={`transcription-${item.id}`} /> 
                         <div className="collapse-title font-semibold">
                           Transcription
                         </div>
@@ -172,7 +172,7 @@ export default function TranscribePage() {
                     </div>
                     <div className="mt-4">
                       <div className="collapse collapse-arrow bg-base-100 border border-base-300">
-                        <input type="checkbox" name={item.id}/> 
+                        <input type="checkbox" name={`summary-${item.id}`} /> 
                         <div className="collapse-title font-semibold">
                           Summary
                         </div>

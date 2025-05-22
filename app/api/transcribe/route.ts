@@ -123,18 +123,25 @@ export async function POST(request: Request) {
     let transcriptionText = "";
 
     try {
-      const existingJob = await transcribeClient.send(new GetTranscriptionJobCommand({
-        TranscriptionJobName: transcriptionJobName,
-      }));
+      let existingJob;
+      try {
+        existingJob = await transcribeClient.send(new GetTranscriptionJobCommand({
+          TranscriptionJobName: transcriptionJobName,
+        }));
+      } catch (error: unknown) {
+        // Job doesn't exist yet, which is expected for new transcriptions
+        console.debug("No existing transcription job found:", error);
+        existingJob = null;
+      }
 
-      if (existingJob.TranscriptionJob?.TranscriptionJobStatus === "COMPLETED") {
+      if (existingJob?.TranscriptionJob?.TranscriptionJobStatus === "COMPLETED") {
         const transcriptUrl = existingJob.TranscriptionJob.Transcript?.TranscriptFileUri;
         if (!transcriptUrl) throw new Error("No transcript URL available");
         
         const response = await fetch(transcriptUrl);
         const data = await response.json();
         transcriptionText = data.results.transcripts[0].transcript;
-      } else if (existingJob.TranscriptionJob?.TranscriptionJobStatus === "IN_PROGRESS") {
+      } else if (existingJob?.TranscriptionJob?.TranscriptionJobStatus === "IN_PROGRESS") {
         transcriptionText = await waitForTranscriptionCompletion(transcribeClient, transcriptionJobName);
       } else {
         await transcribeClient.send(new StartTranscriptionJobCommand({
