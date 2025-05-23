@@ -54,6 +54,9 @@ export default function AudioUploader({ onComplete }: AudioUploaderProps): JSX.E
         if (response.status === 401) {
           throw new Error("Please sign in to continue");
         }
+        if (response.status === 413) {
+          throw new Error("File size is too large. Please choose a file smaller than 20MB.");
+        }
         const errorData = await response.json();
         throw new Error(errorData.details || errorData.error || "Failed to transcribe audio");
       }
@@ -81,7 +84,16 @@ export default function AudioUploader({ onComplete }: AudioUploaderProps): JSX.E
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
+      // Check file size (20MB limit)
+      const maxSize = 20 * 1024 * 1024; // 20MB in bytes
+      if (selectedFile.size > maxSize) {
+        setError(`File size exceeds the 20MB limit. Please choose a smaller file.`);
+        setFile(null);
+        e.target.value = ""; // Reset the input
+        return;
+      }
       setFile(selectedFile);
+      setError(null);
     }
   };
 
