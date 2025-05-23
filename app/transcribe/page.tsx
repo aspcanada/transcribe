@@ -10,7 +10,6 @@ interface TranscriptionHistory {
   createdAt: string;
   fileHash: string;
   filename: string;
-  s3Key: string;
   summary: string;
   transcription: string;
   userId: string;
@@ -127,7 +126,7 @@ export default function TranscribePage() {
               </div>
             ) : (
               history.map((item) => (
-                <div key={`transcription-${item.s3Key}`} className="card bg-base-100 shadow-xl">
+                <div key={`transcription-${item.fileHash}`} className="card bg-base-100 shadow-xl">
                   <div className="card-body">
                     <div className="flex justify-between items-start">
                       <div>
@@ -137,7 +136,7 @@ export default function TranscribePage() {
                         </p>
                       </div>
                       <button
-                        onClick={() => openDeleteModal(item.s3Key)}
+                        onClick={() => openDeleteModal(item.fileHash)}
                         className="btn btn-ghost btn-sm text-error"
                         title="Delete transcription"
                       >
