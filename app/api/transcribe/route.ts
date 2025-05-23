@@ -3,6 +3,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import OpenAI from 'openai';
 import { auth } from '@clerk/nextjs/server';
+import { del } from '@vercel/blob';
 
 const dynamoClient = new DynamoDBClient({
   region: process.env.AWS_REGION,
@@ -26,16 +27,15 @@ export async function POST(request: Request) {
     }
 
     const formData = await request.formData();
-    const file = formData.get("file") as File;
+    const blobUrl = formData.get("blobUrl") as string;
     const context = formData.get("context") as string;
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!blobUrl) {
+      return NextResponse.json({ error: "No file URL provided" }, { status: 400 });
     }
 
-    // Create a unique key based on file name and content hash
-    const fileBuffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest("SHA-256", fileBuffer);
+    // Create a unique key based on the blob URL
+    const hashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(blobUrl));
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 
@@ -64,14 +64,15 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    // Convert audio file to base64
-    const arrayBuffer = await file.arrayBuffer();
-
     // Get transcription from GPT-4
     let transcriptionText = "";
     try {
+      const response = await fetch(blobUrl);
+      const blob = await response.blob();
+      const file = new File([blob], "audio", { type: blob.type });
+      
       const transcriptionResponse = await openai.audio.transcriptions.create({
-        file: new File([arrayBuffer], file.name, { type: file.type }),
+        file,
         model: "gpt-4o-transcribe",
         response_format: "text",
       });
@@ -121,7 +122,7 @@ export async function POST(request: Request) {
         Item: {
           userId,
           fileHash: hashHex,
-          filename: file.name,
+          filename: blobUrl.split("/").pop() || "audio",
           context: context || "",
           transcription: transcriptionText,
           summary,
@@ -134,6 +135,13 @@ export async function POST(request: Request) {
         error: "Failed to save transcription",
         details: error instanceof Error ? error.message : "Unknown error"
       }, { status: 500 });
+    }
+
+    // Delete the blob after processing
+    try {
+      await del(blobUrl);
+    } catch (error) {
+      console.error("Error deleting blob:", error);
     }
 
     return NextResponse.json({ 

@@ -23,6 +23,7 @@
     "@aws-sdk/client-dynamodb": "^3.816.0",
     "@aws-sdk/lib-dynamodb": "^3.816.0",
     "@clerk/nextjs": "^6.9.2",
+    "@vercel/blob": "^0.22.1",
     "next": "15.0.3",
     "openai": "^4.0.0",
     "react": "^18.3.1",

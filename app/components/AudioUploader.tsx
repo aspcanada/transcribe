@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { useAuth } from "@clerk/nextjs";
+import { put } from "@vercel/blob";
 
 interface TranscriptionResponse {
   transcription: string;
@@ -36,11 +37,18 @@ export default function AudioUploader({ onComplete }: AudioUploaderProps): JSX.E
     setError(null);
     setIsExisting(false);
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("context", context);
-
     try {
+      // Upload to Vercel Blob
+      const blob = await put(file.name, file, {
+        access: "public",
+        token: process.env.NEXT_PUBLIC_BLOB_READ_WRITE_TOKEN,
+      });
+
+      // Create form data for the API
+      const formData = new FormData();
+      formData.append("context", context);
+      formData.append("blobUrl", blob.url);
+
       const token = await getToken();
       const response = await fetch("/api/transcribe", {
         method: "POST",
