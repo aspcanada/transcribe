@@ -18,6 +18,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Maximum file size (25MB)
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
+
 export async function POST(request: Request) {
   try {
     const { userId } = await auth();
@@ -31,6 +34,14 @@ export async function POST(request: Request) {
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ 
+        error: "File too large", 
+        details: `Maximum file size is ${MAX_FILE_SIZE / (1024 * 1024)}MB` 
+      }, { status: 413 });
     }
 
     // Create a unique key based on file name and content hash
@@ -64,14 +75,11 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    // Convert audio file to base64
-    const arrayBuffer = await file.arrayBuffer();
-
     // Get transcription from GPT-4
     let transcriptionText = "";
     try {
       const transcriptionResponse = await openai.audio.transcriptions.create({
-        file: new File([arrayBuffer], file.name, { type: file.type }),
+        file: new File([fileBuffer], file.name, { type: file.type }),
         model: "gpt-4o-transcribe",
         response_format: "text",
       });
